@@ -34,7 +34,7 @@ The `datasets/` directory contains three benchmark sets used in our computationa
 
 - **ZQLZ**  
   Zhu, W., Qin, H., Lim, A., and Zhang, H. (2012).  
-  *Iterative deepening A* algorithms for the container relocation problem.*  
+  _Iterative deepening A* algorithms for the container relocation problem._  
   IEEE Transactions on Automation Science and Engineering, 9(4), 710-722.
 
 - **LL**  
