@@ -11,7 +11,7 @@ def bc_loss(model, inputs, labels, device, args):
     inputs = copy.deepcopy(inputs).to(device)
     ps = torch.softmax(model(inputs), dim=1)
     if args.problem_type == 'rBRP':
-        labels = torch.tensor(labels).to(device).view(-1,1) % 5 # max_stacks=5
+        labels = torch.tensor(labels).to(device).view(-1,1) % 5
     elif args.problem_type == 'uBRP':
         labels = torch.tensor(labels).to(device).view(-1,1)
     loss = - torch.log(torch.gather(ps, dim=1, index=labels))
@@ -42,7 +42,7 @@ def train(args):
         ave_loss = 0
         model.train()
         for _, (inputs, labels) in enumerate(dataloader):
-            inputs = inputs.view(len(inputs), 5, 7) # max_stacks=5, max_tiers=7
+            inputs = inputs.view(len(inputs), 5, 7)
             loss = bc_loss(model, inputs, labels, device, args)
             optimizer.zero_grad()
             with torch.autograd.set_detect_anomaly(True):

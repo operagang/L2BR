@@ -32,27 +32,23 @@ def generate_cvs_data(args, device, n_samples=None, seed=None):
     return dataset
 
 
-# for ZQLZ
 def generate_yards(n_samples: int, n_containers: int, max_stacks: int, max_tiers: int, device=None):
     total = max_stacks * max_tiers
     assert 0 <= n_containers <= total
 
-    # 1..n_containers 와 0 패딩
     base = torch.cat([torch.arange(1, n_containers + 1, device=device, dtype=float),
                       torch.zeros(total - n_containers, device=device, dtype=float)]).to(device)
 
-    # 각 샘플별 셔플
     idx = torch.stack([torch.randperm(total, device=device) for _ in range(n_samples)])
     x = base[idx].view(n_samples, max_stacks, max_tiers)
 
-    # 0이 아닌 값 앞으로, 0은 뒤로
-    mask = (x != 0)                                   # (N,S,T)
-    k = mask.sum(dim=2)                               # 각 stack별 nonzero 개수, (N,S)
+    mask = (x != 0)
+    k = mask.sum(dim=2)
 
-    nz_rank = (mask.cumsum(dim=2) - 1).clamp_min(0)   # nonzero의 0-based rank
+    nz_rank = (mask.cumsum(dim=2) - 1).clamp_min(0)
     z_rank  = ((~mask).cumsum(dim=2) - 1).clamp_min(0)
 
-    target_pos = torch.where(mask, nz_rank, k.unsqueeze(2) + z_rank)   # (N,S,T)
+    target_pos = torch.where(mask, nz_rank, k.unsqueeze(2) + z_rank)
 
     N, S, T = x.shape
     row_offset = torch.arange(S, device=x.device).view(1, S, 1) * T
@@ -63,55 +59,42 @@ def generate_yards(n_samples: int, n_containers: int, max_stacks: int, max_tiers
     out.view(-1).scatter_(0, flat_target, x.view(-1))
     return out
 
-# for ZQLZ
 def find_valid_samples_all(yards, n_containers, max_stacks, max_tiers):
-    """
-    yards: (N, S, T) tensor
-    return: 모든 i 검사를 통과한 sample index
-    """
     N, S, T = yards.shape
     total = S * T
     max_i = max_tiers + n_containers - total - 1
 
-    # 확인할 i 가 없으면 전체 통과
     if max_i < 1:
         return torch.arange(N, device=yards.device)
 
-    # 초기: 모든 sample 후보
     valid = torch.ones(N, dtype=torch.bool, device=yards.device)
 
-    # 높이 index (아래=1 ... 위=T)
     tier_index = torch.arange(1, T+1, device=yards.device).view(1,1,T)
 
     for i in range(1, max_i + 1):
-        mask = (yards == i)   # (N,S,T)
-        heights = (mask * tier_index).amax(dim=(1,2))   # (N,)
+        mask = (yards == i)
+        heights = (mask * tier_index).amax(dim=(1,2))
 
         rhs = (total - n_containers) + (i - 1)
         cond = (max_tiers - heights) <= rhs
 
         valid &= cond
-        if not valid.any():   # 더 이상 남은 후보 없으면 조기 종료
+        if not valid.any():
             break
 
     return torch.nonzero(valid, as_tuple=True)[0]
 
-
-# for ZQLZ
 def generate_feasible_yards(n_samples: int, n_containers: int, max_stacks: int, max_tiers: int,
                             device=None):
     collected = []
     collected_total = 0
 
     while collected_total < n_samples:
-        # 일단 넉넉히 뽑아옴 (현재 부족한 개수의 2~3배 정도)
         batch_size = 1024 * 10
 
-        # 후보 샘플 생성
         yards = generate_yards(batch_size, n_containers, max_stacks, max_tiers,
                                device=device)
 
-        # feasible index 추출
         idx = find_valid_samples_all(yards, n_containers, max_stacks, max_tiers)
 
         if idx.numel() > 0:
@@ -122,13 +105,11 @@ def generate_feasible_yards(n_samples: int, n_containers: int, max_stacks: int, 
             collected.append(feasible_yards)
             collected_total += feasible_yards.size(0)
 
-    # 필요한 개수만큼 잘라서 반환
     result = torch.cat(collected, dim=0)[:n_samples]
     return result
 
 
 
-# for ZQLZ
 def get_n_containers_range(max_stacks, max_tiers):
     n_containers_ranges = {
         (3,6):range(15,18),
@@ -179,9 +160,8 @@ def generate_zqlz_data(args, device, n_samples=None, seed=None):
     n_values = list(n_range)
     num_values = len(n_values)
 
-    # 각 n_containers 값별로 균등하게 샘플 분배
     base_per_n = n_samples // num_values
-    remainder = n_samples % num_values  # 나머지 샘플 분배용
+    remainder = n_samples % num_values
 
     samples_per_n = [base_per_n + (1 if i < remainder else 0) for i in range(num_values)]
 
@@ -210,7 +190,7 @@ def generate_ll_data(args, device, n_samples=None, seed=None):
         n_samples = args.problem_num
     max_stacks = args.max_stacks
     max_tiers = args.max_tiers
-    type_ = args.benchmark_type.split('-')[1]  # 'R' or 'U'
+    type_ = args.benchmark_type.split('-')[1]
     n_containers_dict = {
             (1,6):70,
             (2,6):140,
@@ -232,42 +212,34 @@ def generate_ll_data(args, device, n_samples=None, seed=None):
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-    # ✅ PyTorch Tensor를 사용하여 초기화 (GPU로 이동 가능)
     dataset = torch.zeros((n_samples, n_stacks, n_tiers), dtype=torch.float32).to(device)
 
-    # ✅ PyTorch를 사용하여 컨테이너 순서를 무작위로 생성
     container_sequences = torch.rand((n_samples, n_containers), device=device).argsort(dim=-1).float() + 1
 
-    # ✅ 스택을 랜덤하게 배정 (완전히 PyTorch 연산으로 변환)
     stack_fill_counts = torch.zeros((n_samples, n_stacks), dtype=torch.int32, device=device)
 
     for j in range(n_containers):
-        valid_stacks = stack_fill_counts < n_tiers  # 공간이 있는 스택
-        valid_stacks_float = valid_stacks.float()  # softmax를 위한 float 변환
+        valid_stacks = stack_fill_counts < n_tiers
+        valid_stacks_float = valid_stacks.float()
         
-        # ✅ GPU에서 직접 스택을 랜덤 선택
-        stack_probs = valid_stacks_float / valid_stacks_float.sum(dim=-1, keepdim=True)  # 확률로 변환
-        selected_stacks = torch.multinomial(stack_probs, 1).squeeze(dim=-1)  # 각 샘플별로 하나의 스택 선택
+        stack_probs = valid_stacks_float / valid_stacks_float.sum(dim=-1, keepdim=True)
+        selected_stacks = torch.multinomial(stack_probs, 1).squeeze(dim=-1)
 
         tier_positions = stack_fill_counts[torch.arange(n_samples, device=device), selected_stacks]
         dataset[torch.arange(n_samples, device=device), selected_stacks, tier_positions] = container_sequences[:, j]
         stack_fill_counts[torch.arange(n_samples, device=device), selected_stacks] += 1
 
-    # ✅ instance_type이 'upsidedown'이면 각 stack을 정렬 (완전 GPU 연산)
     if type_ == 'U':
-        mask = dataset > 0  # 0이 아닌 위치 찾기
-        sorted_data, _ = torch.sort(torch.where(mask, dataset, torch.inf), dim=-1)  # 0을 무한대로 치환하여 정렬
-        sorted_data[sorted_data == torch.inf] = 0  # 다시 0으로 복원
-        dataset[:] = sorted_data  # 원본 데이터 업데이트
+        mask = dataset > 0
+        sorted_data, _ = torch.sort(torch.where(mask, dataset, torch.inf), dim=-1)
+        sorted_data[sorted_data == torch.inf] = 0
+        dataset[:] = sorted_data
 
     _, total_stacks, _ = dataset.shape
     assert total_stacks == n_bays * 16
-    # dataset = dataset.reshape(batch_size, n_bays, n_rows, feature_dim)
 
-    # 값 변형 (0~1)
     mask = dataset != 0
 
-    # (N+1 - x_i) / (N+1)
     dataset_new = dataset.clone()
     dataset_new[mask] = (n_containers + 1 - dataset[mask]) / (n_containers + 1)
     

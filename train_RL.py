@@ -88,7 +88,7 @@ def train(args):
             env = Env(device=device, x=x0)
             env.clear()
 
-            B = x0.size(0)  # = mini_batch * n_samplings
+            B = x0.size(0)
 
             log_prob_sums = torch.zeros(B, device=device)
             rewards       = torch.full((B,), fill_value=traj_limit, device=device, dtype=torch.float)
